@@ -1,0 +1,51 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#047857">
+<link rel="manifest" href="/static/manifest.json"><link rel="stylesheet" href="/static/style.css"><title>Spickzettel</title></head><body>
+<header><b>📋 Spickzettel</b><a href="/admin">⚙️ Admin</a></header>
+<main>
+<div class="card">
+ <label>Titel (optional, sonst aus Text)</label><input id="title" placeholder="Spickzettel – Basketball Doppelstunde 4">
+ <label>Farbvorlage</label><div class="chips" id="themes"></div>
+ <label>UVP-Text</label><textarea id="text" placeholder="1. Einstieg – 5 Min.&#10;Kurzer Rückblick ...&#10;&#10;Merksatz: ..."></textarea>
+ <div class="row"><button class="sec" id="paste">📥 Einfügen</button><button class="sec" id="clear">🗑 Leeren</button></div>
+ <div class="row"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="landscape" style="width:auto"> Querformat</label>
+ <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="save" style="width:auto" checked> Im Verlauf speichern</label></div>
+ <button id="llm" class="sec" style="display:none">✨ Mit KI kürzen</button>
+ <button id="go">📄 PDF erstellen</button>
+ <div class="msg" id="msg"></div>
+</div>
+<div class="card"><b>Vorschau</b><div class="pv" id="pv" style="margin-top:8px"></div></div>
+<div class="card"><b>Verlauf</b><div id="hist"></div></div>
+</main>
+<script>
+let cfg,theme,$=id=>document.getElementById(id);
+const body=()=>({text:$('text').value,title:$('title').value||null,theme,save:$('save').checked,overrides:{orientation:$('landscape').checked?'landscape':cfg.settings.orientation}});
+async function init(){cfg=await (await fetch('/api/config')).json();theme=cfg.settings.theme;
+ $('themes').innerHTML=Object.entries(cfg.themes).map(([k,t])=>`<button class="chip" data-k="${k}"><span class="dot" style="background:${t.primary}"></span>${t.name}</button>`).join('');
+ document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{theme=b.dataset.k;mark();prev()});mark();
+ if(cfg.llm)$('llm').style.display='block';$('text').value=localStorage.draft||'';hist();prev()}
+function mark(){document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('on',b.dataset.k==theme))}
+let tm;$('text').oninput=()=>{localStorage.draft=$('text').value;clearTimeout(tm);tm=setTimeout(prev,500)};
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function prev(){if(!$('text').value.trim()){$('pv').innerHTML='<div style="padding:12px;color:#888">Text eingeben …</div>';return}
+ const r=await fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body())});if(!r.ok)return;
+ const {data,theme:t}=await r.json();
+ $('pv').innerHTML=`<div class="t" style="background:${t.primary};border-color:${t.accent}">${esc(data.title)}</div>`+
+ data.sections.map(s=>`${s.heading?`<h4 style="color:${t.primary};border-color:${t.accent}">${esc(s.heading)}</h4>`:''}<ul>${s.items.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`).join('')+
+ data.merk.map(m=>`<div class="m" style="background:${t.tint};border-color:${t.accent}"><span style="color:${t.primary}">${esc(m[0])}:</span> ${esc(m[1])}</div>`).join('')}
+$('go').onclick=async()=>{$('msg').textContent='Erstelle …';
+ const r=await fetch('/api/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body())});
+ if(!r.ok){$('msg').textContent='Fehler: '+(await r.json()).detail;return}
+ const b=await r.blob(),u=URL.createObjectURL(b);$('msg').textContent=`Fertig · ${r.headers.get('X-Pages')} Seite(n) · Schrift ${r.headers.get('X-Fontsize')} pt`;
+ const a=document.createElement('a');a.href=u;a.target='_blank';a.download=(body().title||'Spickzettel')+'.pdf';
+ if(navigator.canShare&&navigator.canShare({files:[new File([b],'Spickzettel.pdf',{type:'application/pdf'})]})&&/Mobi/.test(navigator.userAgent)){try{await navigator.share({files:[new File([b],(body().title||'Spickzettel')+'.pdf',{type:'application/pdf'})]})}catch(e){window.open(u)}}else{window.open(u)}
+ hist()};
+$('paste').onclick=async()=>{try{$('text').value=await navigator.clipboard.readText();$('text').oninput()}catch(e){$('msg').textContent='Zwischenablage nicht erlaubt'}};
+$('clear').onclick=()=>{$('text').value='';$('title').value='';$('text').oninput()};
+$('llm').onclick=async()=>{$('msg').textContent='KI kürzt …';const r=await fetch('/api/condense',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body())});
+ if(r.ok){$('text').value=(await r.json()).text;$('text').oninput();$('msg').textContent='Gekürzt – bitte prüfen'}else $('msg').textContent='KI-Fehler'};
+async function hist(){const h=await (await fetch('/api/history')).json();
+ $('hist').innerHTML=h.map((x,i)=>`<div class="hi"><span>${esc(x.title)}</span><button class="sec" data-i="${i}">Laden</button></div>`).join('')||'<div class="msg">Noch leer</div>';
+ document.querySelectorAll('#hist button').forEach(b=>b.onclick=()=>{const x=h[b.dataset.i];$('text').value=x.text;theme=x.theme;mark();$('text').oninput();scrollTo(0,0)})}
+init()
+</script></body></html>

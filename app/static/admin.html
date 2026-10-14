@@ -1,0 +1,41 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/static/style.css"><title>Admin</title></head><body>
+<header><b>⚙️ Admin</b><a href="/">← Zurück</a></header><main>
+<div class="card" id="login"><label>Passwort</label><input type="password" id="pw"><button id="lg">Anmelden</button><div class="msg" id="lm"></div></div>
+<div id="panel" style="display:none">
+<div class="card"><b>Schrift</b>
+ <label>Schriftart</label><select id="font"></select>
+ <label>TTF hochladen (eigene Schrift)</label><input type="file" id="ttf" accept=".ttf">
+ <div class="row"><div><label>Text (pt)</label><input type="number" id="base_size" min="8" max="40"></div><div><label>Überschrift (pt)</label><input type="number" id="heading_size"></div><div><label>Titel (pt)</label><input type="number" id="title_size"></div></div>
+ <div class="row"><div><label>Zeilenabstand</label><input type="number" step="0.05" id="line_spacing"></div><div><label>Rand (mm)</label><input type="number" id="margin_mm"></div><div><label>Min. Schrift Auto-Fit</label><input type="number" id="min_size"></div></div></div>
+<div class="card"><b>Formatvorlage</b><label>Farbe</label><div class="chips" id="themes"></div>
+ <div class="row"><div><label>Aufzählungszeichen</label><select id="bullet"><option>•</option><option>–</option><option>▶</option><option>✓</option><option>■</option></select></div>
+ <div><label>Format</label><select id="orientation"><option value="portrait">Hochformat</option><option value="landscape">Querformat</option></select></div></div></div>
+<div class="card"><b>Optionen</b>
+ <label><input type="checkbox" id="autofit" style="width:auto"> Auto-Fit: auf 1 Seite verkleinern</label>
+ <label><input type="checkbox" id="split_sentences" style="width:auto"> Fließtext in Stichpunkte (pro Satz)</label>
+ <label><input type="checkbox" id="heading_caps" style="width:auto"> Überschriften in Großbuchstaben</label>
+ <label><input type="checkbox" id="merk_box" style="width:auto"> Merksatz als Box</label>
+ <label><input type="checkbox" id="show_date" style="width:auto"> Datum in Fußzeile</label>
+ <label>Fußzeile (z. B. Schule/Name)</label><input id="footer"></div>
+<button id="sv">💾 Speichern</button><div class="msg" id="sm"></div>
+<div class="card" style="margin-top:12px"><b>Verlauf verwalten</b><div id="hist"></div></div>
+<button class="sec" id="lo">Abmelden</button></div></main>
+<script>
+let cfg,theme,$=id=>document.getElementById(id);const N=['base_size','heading_size','title_size','line_spacing','margin_mm','min_size'],C=['autofit','split_sentences','heading_caps','merk_box','show_date'],S=['font','bullet','orientation','footer'];
+async function show(){const r=await fetch('/api/admin/me');if(!r.ok)return;$('login').style.display='none';$('panel').style.display='block';
+ cfg=await (await fetch('/api/config')).json();const s=cfg.settings;theme=s.theme;
+ $('font').innerHTML=cfg.fonts.map(f=>`<option>${f}</option>`).join('');
+ N.forEach(k=>$(k).value=s[k]);C.forEach(k=>$(k).checked=s[k]);S.forEach(k=>$(k).value=s[k]);
+ $('themes').innerHTML=Object.entries(cfg.themes).map(([k,t])=>`<button class="chip" data-k="${k}"><span class="dot" style="background:${t.primary}"></span>${t.name}</button>`).join('');
+ document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{theme=b.dataset.k;mk()});mk();hist()}
+const mk=()=>document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('on',b.dataset.k==theme));
+$('lg').onclick=async()=>{const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('pw').value})});r.ok?show():$('lm').textContent='Falsches Passwort'};
+$('sv').onclick=async()=>{const o={theme};N.forEach(k=>o[k]=+$(k).value);C.forEach(k=>o[k]=$(k).checked);S.forEach(k=>o[k]=$(k).value);
+ const r=await fetch('/api/admin/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});$('sm').textContent=r.ok?'Gespeichert ✓':'Fehler'};
+$('ttf').onchange=async()=>{const f=new FormData();f.append('file',$('ttf').files[0]);const r=await fetch('/api/admin/font',{method:'POST',body:f});if(r.ok){const j=await r.json();$('font').innerHTML=j.fonts.map(x=>`<option>${x}</option>`).join('')}};
+$('lo').onclick=async()=>{await fetch('/api/admin/logout',{method:'POST'});location.reload()};
+async function hist(){const h=await (await fetch('/api/history')).json();$('hist').innerHTML=h.map((x,i)=>`<div class="hi"><span>${x.title}</span><button class="dng" data-i="${i}">✕</button></div>`).join('')||'<div class="msg">Leer</div>';
+ document.querySelectorAll('#hist button').forEach(b=>b.onclick=async()=>{await fetch('/api/admin/history/'+b.dataset.i,{method:'DELETE'});hist()})}
+show()
+</script></body></html>
